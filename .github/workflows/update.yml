@@ -13,19 +13,36 @@ concurrency:
 
 jobs:
   update:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Render the formulas from the latest releases
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/update.py
-      - name: Commit the changed formulas
+      - name: Find the changed formulas
+        id: changed
         run: |
-          if [ -z "$(git status --porcelain Formula)" ]; then
-            echo "No formula changed."
-            exit 0
-          fi
+          echo "formulas=$(git status --porcelain Formula | awk '{print $2}' | xargs)" >>"$GITHUB_OUTPUT"
+      # A push made with this workflow's token does not trigger CI, so the
+      # changed formulas are checked here, before they are committed.
+      - name: Check the changed formulas
+        if: steps.changed.outputs.formulas != ''
+        run: |
+          taps="$(brew --repository)/Library/Taps/bidirekt"
+          mkdir -p "$taps"
+          ln -s "$GITHUB_WORKSPACE" "$taps/homebrew-tap"
+          brew trust bidirekt/tap
+          brew style bidirekt/tap
+          for formula in ${{ steps.changed.outputs.formulas }}; do
+            name="bidirekt/tap/$(basename "$formula" .rb)"
+            brew audit --strict --formula "$name"
+            brew install "$name"
+            brew test "$name"
+          done
+      - name: Commit the changed formulas
+        if: steps.changed.outputs.formulas != ''
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula
