@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  formulas:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tap this checkout
+        run: |
+          taps="$(brew --repository)/Library/Taps/bidirekt"
+          mkdir -p "$taps"
+          ln -s "$GITHUB_WORKSPACE" "$taps/homebrew-tap"
+          brew trust bidirekt/tap
+      - run: brew style bidirekt/tap
+      - run: brew audit --strict --tap bidirekt/tap
+      - name: Install and test each formula
+        run: |
+          for formula in Formula/*.rb; do
+            name="bidirekt/tap/$(basename "$formula" .rb)"
+            brew install "$name"
+            brew test "$name"
+          done
